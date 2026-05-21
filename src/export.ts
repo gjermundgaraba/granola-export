@@ -5,8 +5,6 @@ import sanitizeFilenamePart from "sanitize-filename";
 import type { Doc, TranscriptSegment } from "./granola.ts";
 import { noteMarkdown, transcriptMarkdown } from "./markdown.ts";
 
-export const OUT_DIR = "./notes";
-
 export interface OutputCount {
   folders: number;
   files: number;
@@ -19,6 +17,11 @@ export interface ExportDelta {
   notesWritten: number;
   transcriptsWritten: number;
   transcriptsUnavailable: number;
+}
+
+export interface ExportDocResult {
+  delta: ExportDelta;
+  keepPaths: ReadonlySet<string>;
 }
 
 export interface DocPaths {
@@ -182,15 +185,15 @@ export const exportDoc = Effect.fn("export.exportDoc")(function* <E, R>(args: {
   doc: Doc;
   folders: readonly (readonly string[])[];
   existingPaths: ReadonlySet<string>;
-  keepPaths: Set<string>;
   getTranscript(documentId: string): Effect.Effect<readonly TranscriptSegment[] | null, E, R>;
 }) {
-  const { outDir, doc, folders, existingPaths, keepPaths, getTranscript } = args;
+  const { outDir, doc, folders, existingPaths, getTranscript } = args;
   const delta: ExportDelta = {
     notesWritten: 0,
     transcriptsWritten: 0,
     transcriptsUnavailable: 0,
   };
+  const keepPaths = new Set<string>();
   const { folderNames, notePaths, transcriptPaths } = pathsForDoc(outDir, doc, folders);
 
   const note = noteMarkdown(doc, folderNames);
@@ -205,14 +208,14 @@ export const exportDoc = Effect.fn("export.exportDoc")(function* <E, R>(args: {
 
   if (missingTranscriptPaths.length === 0) {
     for (const path of existingTranscriptPaths) keepPaths.add(path);
-    return delta;
+    return { delta, keepPaths };
   }
 
   const segments = yield* getTranscript(doc.id);
   if (!segments) {
     for (const path of existingTranscriptPaths) keepPaths.add(path);
     delta.transcriptsUnavailable += missingTranscriptPaths.length;
-    return delta;
+    return { delta, keepPaths };
   }
 
   const transcript = transcriptMarkdown(doc, segments);
@@ -222,5 +225,5 @@ export const exportDoc = Effect.fn("export.exportDoc")(function* <E, R>(args: {
     delta.transcriptsWritten++;
   }
 
-  return delta;
+  return { delta, keepPaths };
 });
